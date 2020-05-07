@@ -1,23 +1,25 @@
-#!/bin/sh
-#
+#!/usr/bin/env python3
+import re
+import sys
+from subprocess import check_output
 
-function die {
-    echo >&2 "$@"
-    exit 1
-}
+commit_msg_filepath = sys.argv[1]
 
-JIRA_URL=$(git config jira.url)
+# Figure out which branch we're on
+branch = check_output(["git", "symbolic-ref", "--short", "HEAD"], encoding="UTF-8").strip()
+JIRA_URL = check_output(["git", "config", "jira.url"], encoding="UTF-8").strip()
+if not JIRA_URL:
+    print("No Jira URL configured, please run the command 'git config --global jira.url https://myjira.atlassian.net/browse'")
+    sys.exit(1)
 
-[[ -n "$JIRA_URL" ]] || die "Missing git config jira.url"
+with open(commit_msg_filepath, "r") as f:
+    content = f.readlines()
+    JIRA_FROM_BRANCH = re.search(r"([A-Z]+-\d+)", branch).group(0)
+    for line in content:
+        if f"{JIRA_URL}/{JIRA_FROM_BRANCH}" in line:
+            print(f"Jira found in commit message: {line}")
+            sys.exit(0)
 
-FILE=$1
-MSG=$(grep -v '^#' $FILE)
-
-if [[ -z "$(echo \"$MSG\" | grep '[A-Z]\+-\d\+')" ]]; then
-    BRANCH=$(git symbolic-ref --short HEAD)
-    JIRA_FROM_BRANCH=$(echo "$BRANCH" | grep -o '[A-Z]\+-\d\+')
-    if [[ -n "$JIRA_FROM_BRANCH" ]]; then
-        echo "$JIRA_URL/$JIRA_FROM_BRANCH" >> $FILE
-        echo "Appended '$JIRA_FROM_BRANCH' to commit message (detected from branch name)"
-    fi
-fi
+print(f"Jira not found in commit message appending to the end")
+with open(commit_msg_filepath, "a") as f:
+    f.write(f"{JIRA_URL}/{JIRA_FROM_BRANCH}")
